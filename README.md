@@ -10,6 +10,7 @@ A gentle Pomodoro-style timer with a minimalist wave theme. Sessions and breaks 
 
 ## Getting started
 Open `docs/index.html` in a modern browser. The app uses CDN-hosted React, so no build step is required.
+Open `dist/index.html` in a modern browser. The app uses CDN-hosted React, so no build step is required.
 
 ## Usage tips
 - Adjust session/break lengths before starting. Length controls are disabled while the timer runs to prevent accidental changes.
@@ -25,3 +26,4 @@ GitHub Pages exposes only the repository root or a `/docs` folder. To publish th
 1. Keep the built files in the `docs/` directory (already included in the repo).
 2. In your repository’s **Settings → Pages**, choose the default branch and set the folder to `/docs`.
 3. Save the configuration—GitHub Pages will serve `docs/index.html` as the entry point.
+The core logic lives in `src/script.js` and styles in `src/style.css`. After making changes, open `dist/index.html` to verify behavior in the browser.

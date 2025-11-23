@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZenTime</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+      const { useEffect, useMemo, useRef, useState } = React;
+
+      const PRESETS = [
+        { label: 'Classic 25 / 5', session: 25, break: 5 },
+        { label: 'Focus 50 / 10', session: 50, break: 10 },
+        { label: 'Sprint 15 / 3', session: 15, break: 3 }
+      ];
+
+      const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+      const formatTime = (totalSeconds) => {
+        const minutes = Math.floor(totalSeconds / 60)
+          .toString()
+          .padStart(2, '0');
+        const seconds = Math.floor(totalSeconds % 60)
+          .toString()
+          .padStart(2, '0');
+        return `${minutes}:${seconds}`;
+      };
+
+      function App() {
+        const [sessionLength, setSessionLength] = useState(25);
+        const [breakLength, setBreakLength] = useState(5);
+        const [secondsLeft, setSecondsLeft] = useState(25 * 60);
+        const [isRunning, setIsRunning] = useState(false);
+        const [phase, setPhase] = useState('session');
+
+        const audioContextRef = useRef(null);
+
+        const headline = useMemo(
+          () => (phase === 'session' ? 'Focus session' : 'Break time'),
+          [phase]
+        );
+
+        useEffect(() => {
+          const saved = localStorage.getItem('zentime-settings');
+          if (!saved) return;
+          try {
+            const parsed = JSON.parse(saved);
+            if (typeof parsed.session === 'number' && typeof parsed.break === 'number') {
+              setSessionLength(clamp(parsed.session, 1, 180));
+              setBreakLength(clamp(parsed.break, 1, 180));
+              setSecondsLeft(clamp(parsed.session, 1, 180) * 60);
+              setPhase('session');
+              setIsRunning(false);
+            }
+          } catch (error) {
+            console.error('Unable to restore settings', error);
+          }
+        }, []);
+
+        useEffect(() => {
+          localStorage.setItem(
+            'zentime-settings',
+            JSON.stringify({ session: sessionLength, break: breakLength })
+          );
+        }, [sessionLength, breakLength]);
+
+        useEffect(() => {
+          if (!isRunning) return undefined;
+
+          const interval = window.setInterval(() => {
+            setSecondsLeft((current) => {
+              if (current <= 1) {
+                const nextPhase = phase === 'session' ? 'break' : 'session';
+                playChime();
+                setPhase(nextPhase);
+                return (nextPhase === 'session' ? sessionLength : breakLength) * 60;
+              }
+              return current - 1;
+            });
+          }, 1000);
+
+          return () => window.clearInterval(interval);
+        }, [isRunning, phase, sessionLength, breakLength]);
+
+        useEffect(() => {
+          if (isRunning) return;
+          if (phase === 'session') {
+            setSecondsLeft(sessionLength * 60);
+          } else {
+            setSecondsLeft(breakLength * 60);
+          }
+        }, [sessionLength, breakLength, phase, isRunning]);
+
+        const adjustLength = (type, delta) => {
+          if (isRunning) return;
+          if (type === 'session') {
+            setSessionLength((value) => clamp(value + delta, 1, 180));
+          } else {
+            setBreakLength((value) => clamp(value + delta, 1, 180));
+          }
+        };
+
+        const toggleRunning = () => {
+          setIsRunning((running) => !running);
+        };
+
+        const resetTimer = () => {
+          setIsRunning(false);
+          setPhase('session');
+          setSessionLength(25);
+          setBreakLength(5);
+          setSecondsLeft(25 * 60);
+          stopChime();
+        };
+
+        const applyPreset = (preset) => {
+          setIsRunning(false);
+          setPhase('session');
+          setSessionLength(preset.session);
+          setBreakLength(preset.break);
+          setSecondsLeft(preset.session * 60);
+          stopChime();
+        };
+
+        const stopChime = () => {
+          if (!audioContextRef.current) return;
+          audioContextRef.current.close();
+          audioContextRef.current = null;
+        };
+
+        const playChime = () => {
+          try {
+            const context = new AudioContext();
+            audioContextRef.current = context;
+
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            const now = context.currentTime;
+
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(600, now);
+
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(0.4, now + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 1);
+
+            oscillator.connect(gain);
+            gain.connect(context.destination);
+
+            oscillator.start(now);
+            oscillator.stop(now + 1);
+          } catch (error) {
+            console.error('Unable to play chime', error);
+          }
+        };
+
+        return (
+          <div className="app-shell">
+            <header className="hero">
+              <div>
+                <p className="eyebrow">Mindful Pomodoro</p>
+                <h1>ZenTime</h1>
+                <p className="lede">
+                  A focused timer with sensible defaults, ergonomic controls, and a lightweight React build you can run anywhere.
+                </p>
+              </div>
+              <div className="pill-group" role="group" aria-label="Timer status">
+                <span className={`pill ${phase === 'session' ? 'pill-active' : ''}`}>
+                  Session
+                </span>
+                <span className={`pill ${phase === 'break' ? 'pill-active' : ''}`}>
+                  Break
+                </span>
+              </div>
+            </header>
+
+            <main className="grid">
+              <section className="panel">
+                <div className="timer-card">
+                  <div className="timer-face">
+                    <p className="timer-label">{headline}</p>
+                    <p className="timer-value">{formatTime(secondsLeft)}</p>
+                    <p className="subtle">
+                      {isRunning ? 'Counting down...' : 'Paused — adjust times or hit start'}
+                    </p>
+                  </div>
+                  <div className="actions">
+                    <button className="primary" onClick={toggleRunning} aria-label={isRunning ? 'Pause timer' : 'Start timer'}>
+                      {isRunning ? 'Pause' : 'Start'}
+                    </button>
+                    <button className="ghost" onClick={resetTimer} aria-label="Reset timer to defaults">
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section className="panel">
+                <h2>Lengths</h2>
+                <p className="subtle">
+                  Adjust the minutes for each phase. Changes apply immediately while paused.
+                </p>
+                <div className="length-grid">
+                  <LengthControl
+                    label="Session"
+                    value={sessionLength}
+                    onIncrease={() => adjustLength('session', 1)}
+                    onDecrease={() => adjustLength('session', -1)}
+                    disabled={isRunning}
+                  />
+                  <LengthControl
+                    label="Break"
+                    value={breakLength}
+                    onIncrease={() => adjustLength('break', 1)}
+                    onDecrease={() => adjustLength('break', -1)}
+                    disabled={isRunning}
+                  />
+                </div>
+              </section>
+
+              <section className="panel">
+                <h2>Presets</h2>
+                <p className="subtle">Load a routine and start when ready. The timer resets to the session phase.</p>
+                <div className="preset-grid">
+                  {PRESETS.map((preset) => (
+                    <button
+                      key={preset.label}
+                      className="preset"
+                      onClick={() => applyPreset(preset)}
+                      aria-label={`Use preset ${preset.label}`}
+                    >
+                      <span className="preset-title">{preset.label}</span>
+                      <span className="preset-meta">{preset.session} min / {preset.break} min</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="panel">
+                <h2>Tips</h2>
+                <ul className="list">
+                  <li>Use presets to explore rhythms, then fine-tune minutes in the Lengths panel.</li>
+                  <li>The timer keeps running when a phase completes and auto-switches between session and break.</li>
+                  <li>All preferences save locally. Reset restores the original 25 / 5 Pomodoro.</li>
+                </ul>
+              </section>
+            </main>
+          </div>
+        );
+      }
+
+      function LengthControl({ label, value, onIncrease, onDecrease, disabled }) {
+        return (
+          <div className="length-control">
+            <div>
+              <p className="length-label">{label}</p>
+              <p className="length-value">{value} min</p>
+            </div>
+            <div className="length-buttons" role="group" aria-label={`${label} length controls`}>
+              <button onClick={onDecrease} disabled={disabled} aria-label={`Decrease ${label} length`}>
+                −
+              </button>
+              <button onClick={onIncrease} disabled={disabled} aria-label={`Increase ${label} length`}>
+                +
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+  </body>
+</html>

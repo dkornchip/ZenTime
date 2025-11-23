@@ -1,29 +1,32 @@
 # ZenTime
 
-A gentle Pomodoro-style timer with a minimalist wave theme. Sessions and breaks are configurable, persisted locally, and backed by accessible controls.
+ZenTime is a lightweight, single-page Pomodoro timer that runs entirely in the browser. It features configurable session/break lengths, preset routines, persistent preferences, and a calm wave-inspired theme.
 
-## Features
-- Session and break length controls with clear labels and keyboard-friendly focus styles.
-- Start/pause toggle, reset, and automatic break/session transitions with audible cues.
-- Preset buttons (25/5, 50/10, 15/3) to quickly switch routines.
-- Preferences saved to your browser so lengths persist between visits.
+## Why this refactor?
+The app now uses small, focused React components and custom hooks to keep timer logic predictable and easy to extend. Session/break lengths are clamped, stored, and synchronized with the active timer so adjustments cannot leave the UI in an inconsistent state.
 
-## Getting started
-Open `docs/index.html` in a modern browser. The app uses CDN-hosted React, so no build step is required.
-Open `dist/index.html` in a modern browser. The app uses CDN-hosted React, so no build step is required.
+## Quick start
+1. Open the `docs/index.html` file in any modern browser. React is loaded from a CDN, so no build tooling is required.
+2. Choose **Start** to begin a session, or pick a preset to load common durations (25/5, 50/10, 15/3).
+3. Use **Reset** to return to the 25-minute session / 5-minute break defaults and stop the alert sound.
 
-## Usage tips
-- Adjust session/break lengths before starting. Length controls are disabled while the timer runs to prevent accidental changes.
-- Click a preset to load new durations; playback will pause and the timer returns to the session state with the new values.
-- Use **Reset** to restore defaults (25-minute session / 5-minute break) and stop any playing audio.
+### Serve as a webpage
+If you prefer to host the timer locally (or validate it before publishing), run a static server from the project root:
 
-## Development
-The core logic lives in `src/script.js` and styles in `src/style.css`. After making changes, open `docs/index.html` to verify behavior in the browser.
+```bash
+python3 -m http.server 8000
+```
 
-## Publishing on GitHub Pages
-GitHub Pages exposes only the repository root or a `/docs` folder. To publish this app:
+Then open [http://localhost:8000/docs/](http://localhost:8000/docs/) in your browser.
 
-1. Keep the built files in the `docs/` directory (already included in the repo).
-2. In your repository’s **Settings → Pages**, choose the default branch and set the folder to `/docs`.
-3. Save the configuration—GitHub Pages will serve `docs/index.html` as the entry point.
-The core logic lives in `src/script.js` and styles in `src/style.css`. After making changes, open `dist/index.html` to verify behavior in the browser.
+For GitHub Pages, point the Pages source to the `/docs` folder—`docs/index.html` is the entry point.
+
+## Project layout
+- `src/` – Source HTML/CSS/JS used during development.
+- `docs/` – Publish-ready files for static hosting (mirrors `src/`).
+- `CHANGELOG.md` – Release notes.
+
+## Technology choices
+- **React via CDN** keeps the bundle simple and avoids a build step.
+- **Custom hooks** manage persistence and timer transitions without duplicated logic.
+- **Accessible controls** include explicit labels, ARIA live regions, and focus-visible states from the shared styles.

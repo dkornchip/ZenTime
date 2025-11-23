@@ -48,5 +48,36 @@ The Vite config builds directly into `docs/`, which GitHub Pages can serve witho
 - `vite.config.js` – Vite configuration (builds to `docs/` and uses relative base for Pages).
 - `docs/` – Generated production bundle after running `npm run build`.
 
+## Resolving branch conflicts
+If GitHub shows “This branch has conflicts that must be resolved,” sync with the default branch and reconcile the changes locally:
+
+1. Fetch the latest default branch (replace `main` if your repo uses another name):
+   ```bash
+   git fetch origin
+   ```
+2. Update your working branch with the default branch history:
+   ```bash
+   git merge origin/main
+   # or: git rebase origin/main
+   ```
+3. Run `git status` to list conflicted files, open each one, and edit the conflict markers to keep the intended code. Save the file, then mark it resolved:
+   ```bash
+   git add <file>
+   ```
+4. Once all conflicts are staged, confirm the app still works (e.g., `npm run build` or `npm run dev` locally), then complete the merge/rebase:
+   ```bash
+   git commit  # if merging
+   # or: git rebase --continue
+   ```
+5. Push the branch:
+   ```bash
+   git push
+   ```
+
+If the merge touches UI or logic, rebuild the production bundle before pushing so `docs/` stays in sync:
+```bash
+npm run build
+```
+
 ## License
 MIT

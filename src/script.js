@@ -2,29 +2,22 @@ import React from 'https://esm.sh/react@18.2.0'
 import ReactDOM from 'https://esm.sh/react-dom@18.2.0'
 
 const STORAGE_KEY = 'zentime-preferences'
-const DEFAULT_BREAK = 5
-const DEFAULT_SESSION = 25
+const DEFAULTS = { session: 25, break: 5 }
+const TIMER_MODES = { session: 'SESSION', break: 'BREAK' }
+
+const clampMinutes = (value) => Math.min(60, Math.max(1, value))
 
 const loadPreferences = () => {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY))
     if (!saved) return null
-    const { breakLength, sessionLength } = saved
-    if (
-      typeof breakLength === 'number' &&
-      typeof sessionLength === 'number' &&
-      breakLength >= 1 &&
-      sessionLength >= 1
-    ) {
-      return {
-        breakLength,
-        sessionLength,
-      }
-    }
+    const sessionLength = clampMinutes(saved.sessionLength)
+    const breakLength = clampMinutes(saved.breakLength)
+    return { sessionLength, breakLength }
   } catch (error) {
     console.warn('Unable to load saved preferences', error)
+    return null
   }
-  return null
 }
 
 const savePreferences = (breakLength, sessionLength) => {
@@ -41,18 +34,18 @@ const savePreferences = (breakLength, sessionLength) => {
 const formatTime = (valueInSeconds) => {
   const minutes = Math.floor(valueInSeconds / 60)
   const seconds = valueInSeconds % 60
-  const formattedSeconds = seconds < 10 ? `0${seconds}` : seconds
-  const formattedMinutes = minutes < 10 ? `0${minutes}` : minutes
-  return `${formattedMinutes}:${formattedSeconds}`
+  const paddedMinutes = minutes.toString().padStart(2, '0')
+  const paddedSeconds = seconds.toString().padStart(2, '0')
+  return `${paddedMinutes}:${paddedSeconds}`
 }
 
 const usePersistentDurations = () => {
-  const savedPreferences = React.useMemo(loadPreferences, [])
+  const saved = React.useMemo(loadPreferences, [])
   const [breakLength, setBreakLength] = React.useState(
-    savedPreferences?.breakLength ?? DEFAULT_BREAK
+    saved?.breakLength ?? DEFAULTS.break
   )
   const [sessionLength, setSessionLength] = React.useState(
-    savedPreferences?.sessionLength ?? DEFAULT_SESSION
+    saved?.sessionLength ?? DEFAULTS.session
   )
 
   React.useEffect(() => {
@@ -67,6 +60,134 @@ const usePersistentDurations = () => {
   }
 }
 
+const useTimer = (sessionLength, breakLength, onCycleComplete) => {
+  const [mode, setMode] = React.useState(TIMER_MODES.session)
+  const [secondsRemaining, setSecondsRemaining] = React.useState(
+    sessionLength * 60
+  )
+  const [isRunning, setIsRunning] = React.useState(false)
+
+  React.useEffect(() => {
+    const activeMinutes = mode === TIMER_MODES.session ? sessionLength : breakLength
+    const nextSeconds = activeMinutes * 60
+    setSecondsRemaining((current) =>
+      isRunning ? Math.min(current, nextSeconds) : nextSeconds
+    )
+  }, [sessionLength, breakLength, mode, isRunning])
+
+  React.useEffect(() => {
+    if (!isRunning) return undefined
+
+    const tick = () => {
+      setSecondsRemaining((current) => Math.max(current - 1, 0))
+    }
+
+    const timerId = window.setInterval(tick, 1000)
+    return () => window.clearInterval(timerId)
+  }, [isRunning])
+
+  React.useEffect(() => {
+    if (!isRunning || secondsRemaining !== 0) return undefined
+
+    const nextMode = mode === TIMER_MODES.session ? TIMER_MODES.break : TIMER_MODES.session
+    const nextMinutes = nextMode === TIMER_MODES.session ? sessionLength : breakLength
+
+    onCycleComplete?.(nextMode)
+    setMode(nextMode)
+    setSecondsRemaining(nextMinutes * 60)
+  }, [isRunning, secondsRemaining, mode, sessionLength, breakLength, onCycleComplete])
+
+  const toggle = () => setIsRunning((current) => !current)
+  const reset = (initialSessionMinutes) => {
+    setIsRunning(false)
+    setMode(TIMER_MODES.session)
+    setSecondsRemaining(initialSessionMinutes * 60)
+  }
+
+  return {
+    mode,
+    secondsRemaining,
+    isRunning,
+    toggle,
+    reset,
+    setMode,
+    setSecondsRemaining,
+    setIsRunning,
+  }
+}
+
+const LengthControl = ({
+  label,
+  idPrefix,
+  value,
+  onIncrease,
+  onDecrease,
+  disabled,
+}) => (
+  <div className="length-card">
+    <h3 id={`${idPrefix}-label`}>{label}</h3>
+    <div className="break-session-length">
+      <button
+        id={`${idPrefix}-increment`}
+        type="button"
+        aria-label={`Increase ${label.toLowerCase()} length`}
+        disabled={disabled}
+        onClick={onIncrease}
+      >
+        + {label.split(' ')[0]}
+      </button>
+      <strong id={`${idPrefix}-length`} aria-live="polite">
+        {value}
+      </strong>
+      <button
+        id={`${idPrefix}-decrement`}
+        type="button"
+        aria-label={`Decrease ${label.toLowerCase()} length`}
+        disabled={disabled}
+        onClick={onDecrease}
+      >
+        – {label.split(' ')[0]}
+      </button>
+    </div>
+  </div>
+)
+
+const Presets = ({ applyPreset }) => (
+  <section className="presets" aria-label="Timer presets">
+    <h3>Presets</h3>
+    <div className="preset-grid">
+      <button type="button" onClick={() => applyPreset(25, 5)}>
+        Focus 25 / 5
+      </button>
+      <button type="button" onClick={() => applyPreset(50, 10)}>
+        Deep Work 50 / 10
+      </button>
+      <button type="button" onClick={() => applyPreset(15, 3)}>
+        Sprint 15 / 3
+      </button>
+    </div>
+  </section>
+)
+
+const TimerDisplay = ({ title, formattedTime, onToggle, onReset, isRunning }) => (
+  <section className="timer-wrapper" aria-live="polite">
+    <div className="timer" role="timer" aria-atomic="true">
+      <h2 id="timer-label">{title}</h2>
+      <p id="time-left" className="time-display">
+        {formattedTime}
+      </p>
+    </div>
+    <div className="timer-actions">
+      <button id="start_stop" type="button" onClick={onToggle}>
+        {isRunning ? 'Pause' : 'Start'}
+      </button>
+      <button id="reset" type="button" onClick={onReset}>
+        Reset
+      </button>
+    </div>
+  </section>
+)
+
 const App = () => {
   const {
     breakLength,
@@ -75,11 +196,13 @@ const App = () => {
     setSessionLength,
   } = usePersistentDurations()
 
-  const [timeLeft, setTimeLeft] = React.useState(sessionLength * 60)
-  const [timingType, setTimingType] = React.useState('SESSION')
-  const [play, setPlay] = React.useState(false)
-
   const audioRef = React.useRef(null)
+
+  const handleCycleComplete = React.useCallback(() => {
+    audioRef.current?.play()
+  }, [])
+
+  const timer = useTimer(sessionLength, breakLength, handleCycleComplete)
 
   const stopAudio = () => {
     if (audioRef.current) {
@@ -89,98 +212,37 @@ const App = () => {
   }
 
   const applyPreset = (sessionMinutes, breakMinutes) => {
-    setPlay(false)
-    setTimingType('SESSION')
-    setSessionLength(sessionMinutes)
-    setBreakLength(breakMinutes)
-    setTimeLeft(sessionMinutes * 60)
+    const nextSession = clampMinutes(sessionMinutes)
+    const nextBreak = clampMinutes(breakMinutes)
+    setSessionLength(nextSession)
+    setBreakLength(nextBreak)
+    timer.reset(nextSession)
     stopAudio()
   }
 
-  const handleBreakIncrease = () => {
-    if (breakLength < 60) {
-      const nextLength = breakLength + 1
-      setBreakLength(nextLength)
-      if (!play && timingType === 'BREAK') {
-        setTimeLeft(nextLength * 60)
-      }
+  const updateLength = (setter, currentValue, delta, affectingMode) => {
+    const nextValue = clampMinutes(currentValue + delta)
+    setter(nextValue)
+    if (!timer.isRunning && timer.mode === affectingMode) {
+      timer.setSecondsRemaining(nextValue * 60)
     }
-  }
-
-  const handleBreakDecrease = () => {
-    if (breakLength > 1) {
-      const nextLength = breakLength - 1
-      setBreakLength(nextLength)
-      if (!play && timingType === 'BREAK') {
-        setTimeLeft(nextLength * 60)
-      }
-    }
-  }
-
-  const handleSessionIncrease = () => {
-    if (sessionLength < 60) {
-      const nextLength = sessionLength + 1
-      setSessionLength(nextLength)
-      if (!play && timingType === 'SESSION') {
-        setTimeLeft(nextLength * 60)
-      }
-    }
-  }
-
-  const handleSessionDecrease = () => {
-    if (sessionLength > 1) {
-      const nextLength = sessionLength - 1
-      setSessionLength(nextLength)
-      if (!play && timingType === 'SESSION') {
-        setTimeLeft(nextLength * 60)
-      } else if (play && timingType === 'SESSION' && timeLeft > nextLength * 60) {
-        setTimeLeft(nextLength * 60)
-      }
+    if (
+      timer.isRunning &&
+      timer.mode === affectingMode &&
+      timer.secondsRemaining > nextValue * 60
+    ) {
+      timer.setSecondsRemaining(nextValue * 60)
     }
   }
 
   const handleReset = () => {
-    setPlay(false)
-    setBreakLength(DEFAULT_BREAK)
-    setSessionLength(DEFAULT_SESSION)
-    setTimingType('SESSION')
-    setTimeLeft(DEFAULT_SESSION * 60)
     stopAudio()
+    setBreakLength(DEFAULTS.break)
+    setSessionLength(DEFAULTS.session)
+    timer.reset(DEFAULTS.session)
   }
 
-  const togglePlay = () => {
-    setPlay((current) => !current)
-  }
-
-  React.useEffect(() => {
-    if (!play) return undefined
-
-    if (timeLeft === 0) return undefined
-
-    const timer = setTimeout(() => {
-      setTimeLeft((current) => (current > 0 ? current - 1 : 0))
-    }, 1000)
-
-    return () => clearTimeout(timer)
-  }, [play, timeLeft])
-
-  React.useEffect(() => {
-    if (!play || timeLeft !== 0) return undefined
-
-    const audio = audioRef.current
-    audio?.play()
-
-    const transitionTimer = setTimeout(() => {
-      const nextIsSession = timingType === 'BREAK'
-      const nextDuration = nextIsSession ? sessionLength : breakLength
-      setTimingType(nextIsSession ? 'SESSION' : 'BREAK')
-      setTimeLeft(nextDuration * 60)
-    }, 1000)
-
-    return () => clearTimeout(transitionTimer)
-  }, [play, timeLeft, timingType, sessionLength, breakLength])
-
-  const title = timingType === 'SESSION' ? 'Session' : 'Break'
+  const title = timer.mode === TIMER_MODES.session ? 'Session' : 'Break'
 
   return (
     <div className="app-shell">
@@ -192,91 +254,61 @@ const App = () => {
       </header>
       <main className="wrapper">
         <section className="length-controls" aria-label="Timer lengths">
-          <div className="length-card">
-            <h3 id="break-label">Break Length</h3>
-            <div className="break-session-length">
-              <button
-                id="break-increment"
-                type="button"
-                aria-label="Increase break length"
-                disabled={play}
-                onClick={handleBreakIncrease}
-              >
-                + Break
-              </button>
-              <strong id="break-length" aria-live="polite">
-                {breakLength}
-              </strong>
-              <button
-                id="break-decrement"
-                type="button"
-                aria-label="Decrease break length"
-                disabled={play}
-                onClick={handleBreakDecrease}
-              >
-                – Break
-              </button>
-            </div>
-          </div>
-          <div className="length-card">
-            <h3 id="session-label">Session Length</h3>
-            <div className="break-session-length">
-              <button
-                id="session-increment"
-                type="button"
-                aria-label="Increase session length"
-                disabled={play}
-                onClick={handleSessionIncrease}
-              >
-                + Session
-              </button>
-              <strong id="session-length" aria-live="polite">
-                {sessionLength}
-              </strong>
-              <button
-                id="session-decrement"
-                type="button"
-                aria-label="Decrease session length"
-                disabled={play}
-                onClick={handleSessionDecrease}
-              >
-                – Session
-              </button>
-            </div>
-          </div>
+          <LengthControl
+            label="Break Length"
+            idPrefix="break"
+            value={breakLength}
+            disabled={timer.isRunning}
+            onIncrease={() =>
+              updateLength(
+                setBreakLength,
+                breakLength,
+                1,
+                TIMER_MODES.break
+              )
+            }
+            onDecrease={() =>
+              updateLength(
+                setBreakLength,
+                breakLength,
+                -1,
+                TIMER_MODES.break
+              )
+            }
+          />
+          <LengthControl
+            label="Session Length"
+            idPrefix="session"
+            value={sessionLength}
+            disabled={timer.isRunning}
+            onIncrease={() =>
+              updateLength(
+                setSessionLength,
+                sessionLength,
+                1,
+                TIMER_MODES.session
+              )
+            }
+            onDecrease={() =>
+              updateLength(
+                setSessionLength,
+                sessionLength,
+                -1,
+                TIMER_MODES.session
+              )
+            }
+          />
         </section>
 
-        <section className="timer-wrapper" aria-live="polite">
-          <div className="timer" role="timer" aria-atomic="true">
-            <h2 id="timer-label">{title}</h2>
-            <p id="time-left" className="time-display">
-              {formatTime(timeLeft)}
-            </p>
-          </div>
-          <div className="timer-actions">
-            <button id="start_stop" type="button" onClick={togglePlay}>
-              {play ? 'Pause' : 'Start'}
-            </button>
-            <button id="reset" type="button" onClick={handleReset}>
-              Reset
-            </button>
-          </div>
-        </section>
+        <TimerDisplay
+          title={title}
+          formattedTime={formatTime(timer.secondsRemaining)}
+          isRunning={timer.isRunning}
+          onToggle={timer.toggle}
+          onReset={handleReset}
+        />
 
-        <section className="presets" aria-label="Timer presets">
-          <h3>Presets</h3>
-          <div className="preset-grid">
-            <button type="button" onClick={() => applyPreset(25, 5)}>
-              Focus 25 / 5
-            </button>
-            <button type="button" onClick={() => applyPreset(50, 10)}>
-              Deep Work 50 / 10
-            </button>
-            <button type="button" onClick={() => applyPreset(15, 3)}>
-              Sprint 15 / 3
-            </button>
-          </div>
-        </section>
+        <Presets applyPreset={applyPreset} />
       </main>
       <audio
         id="beep"
